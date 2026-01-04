@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NL Todo - 前端</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root{
+        --bg: #f6f8fa;
+        --card: #ffffff;
+        --muted: #6b7280;
+        --primary: #2563eb;
+        --accent: #06b6d4;
+        --danger: #ef4444;
+        --surface-shadow: 0 6px 18px rgba(15,23,42,0.06);
+      }
+      *{box-sizing:border-box}
+      body { font-family: 'Inter', Arial, Helvetica, sans-serif; margin: 16px; background:var(--bg); color:#0f172a }
+      .container { max-width: 1100px; margin: 18px auto; padding:18px }
+      h1{margin:0 0 12px 0; font-size:1.6rem}
+      textarea { width: 100%; height: 84px; border:1px solid #e6edf3; padding:10px; border-radius:8px; background:var(--card) }
+      input, select, button { padding:8px 10px; margin:6px 0; border-radius:8px; border:1px solid #e6edf3 }
+      .card{ background:var(--card); padding:12px; border-radius:12px; box-shadow:var(--surface-shadow); }
+      .todo { border-radius:10px; padding:12px; margin:10px 0; background:linear-gradient(180deg,#fff,#fbfdff); border:1px solid #eef2ff }
+      .tags { color: var(--muted); font-size:0.85em }
+      
+      .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 12px }
+      .cal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px }
+      .cal-day { border-radius:10px; padding:10px; min-height:70px; background:linear-gradient(180deg,#ffffff,#f8fafc); cursor:pointer; border:1px solid #f1f5f9 }
+      .cal-day.other { color:#9ca3af }
+      .cal-day .num { font-weight:700 }
+      .cal-day .dot { width:8px; height:8px; background:var(--primary); border-radius:50%; display:inline-block; margin-left:6px }
+      .selected { box-shadow:0 0 0 3px rgba(37,99,235,0.12); border-color:var(--primary) }
+      
+      .hour-cell { font-size:0.85em; padding:6px; }
+      .week-grid{ border-radius:10px; overflow:hidden }
+      
+      .week-grid.scrollable{ max-height:520px; overflow-y:auto }
+      .day-header{ background:linear-gradient(90deg,#f8fafc,#ffffff); padding:10px; border-bottom:1px solid #f1f5f9 }
+      .task-item{ position:absolute; left:6px; right:6px; padding:6px 8px; border-radius:6px; font-size:0.84em; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#08203a; box-shadow:0 2px 6px rgba(2,6,23,0.06); border-left:4px solid rgba(0,0,0,0.06) }
+      .task-item.p0{ background:#eef2ff; border-left-color:#9ca3ff }
+      .task-item.p1{ background:#fff7ed; border-left-color:#f59e0b }
+      .task-item.p2{ background:#fff1f2; border-left-color:#f43f5e }
+      .task-item.p3{ background:#fde68a; border-left-color:#f97316 }
+      .priority-badge{ display:inline-block; padding:4px 8px; border-radius:999px; font-size:0.75em; margin-left:8px }
+      .priority-badge.p0{ background:#eef2ff; color:#1e293b }
+      .priority-badge.p1{ background:#fff7ed; color:#92400e }
+      .priority-badge.p2{ background:#fff1f2; color:#7f1d1d }
+      .priority-badge.p3{ background:#fde68a; color:#92400e }
+      
+      .btn{ background:transparent; border:1px solid #e6edf3; padding:8px 10px; border-radius:8px; cursor:pointer }
+      .btn-primary{ background:var(--primary); color:#fff; border:none }
+      .btn-danger{ background:var(--danger); color:#fff; border:none }
+      
+      .modal{ width:520px; max-width:92vw }
+      .modal-overlay{ backdrop-filter:blur(3px) }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="container">
+      <h1>NL Todo</h1>
+      <div style="margin-bottom:8px; color:#444">当前时间：<span style="font-weight:600">{{ currentTimeDisplay }}</span></div>
+      
+      <div class="main-grid" style="display:flex; gap:16px; align-items:flex-start;">
+        <div class="calendar-panel" style="flex:2; min-width:0">
+          
+          <div class="week-controls" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <div>
+              <button @click="prevWeek">◀</button>
+              <button @click="nextWeek">▶</button>
+            </div>
+            <div>
+              <span v-if="loading">正在处理...</span>
+            </div>
+          </div>
+          <div class="week-grid scrollable" style="display:grid; grid-template-columns:80px repeat(7, 1fr); gap:2px; border:1px solid #ddd">
+            
+            <div style="background:#fafafa; border-right:1px solid #eee"></div>
+            
+            <div v-for="day in weekDates" :key="day" style="background:#fafafa; padding:6px; text-align:center; border-left:1px solid #eee; font-weight:600">{{ formatDayHeader(day) }}</div>
+
+            
+            <template v-for="h in hours" :key="'row'+h">
+              <div style="padding:6px; border-top:1px solid #eee; background:#fff; text-align:right; color:#666">{{ String(h).padStart(2,'0') }}:00</div>
+              <div v-for="day in weekDates" :key="day+'_'+h" class="hour-cell" :data-day="day" :data-hour="h" @click="onHourClick(day,h)" style="border-top:1px solid #f0f0f0; position:relative; background:#fff; min-height:44px">
+                <div v-for="task in tasksInCell(day,h)" :key="'task'+task.id" :class="['task-item', 'p'+(task.priority||0)]" :style="{ top: taskTop(task) }" @click.stop="openTask(task)">
+                      {{ task.title }}
+                    </div>
+              </div>
+            </template>
+          </div>
+
+          <h3 style="margin-top:12px">用自然语言添加待办</h3>
+          <textarea v-model="nlText" placeholder="例如：明天下午三点开会，主题是产品评审，提醒我并加上 tag: 工作"></textarea>
+          <div style="margin-top:8px">
+            <button class="btn btn-primary" @click="addNL">添加/删除（自然语言）</button>
+            <span v-if="loading" style="margin-left:8px">正在处理...</span>
+          </div>
+        </div>
+
+        
+        <div class="side-panel card" style="flex:1; min-width:280px">
+          <h3 style="display:flex; align-items:center; justify-content:space-between; margin:0 0 8px 0">
+            <span>待办列表</span>
+            <div>
+              <button class="btn" @click="toggleTodoList" style="margin-left:12px">{{ showTodoList ? '折叠' : '展开' }}</button>
+            </div>
+          </h3>
+          <div v-show="showTodoList" style="max-height:480px; overflow:auto; margin-top:8px">
+            <div v-if="todos.length===0" style="color:var(--muted)">暂无待办</div>
+            <div v-for="t in todos" :key="t.id" class="todo">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                <div @click.stop="openTask(t)" style="flex:1; cursor:pointer">
+                  <strong>{{ t.title }}</strong>
+                  <span v-if="t.priority !== undefined && t.priority !== null" :class="['priority-badge', 'p'+(t.priority||0)]">优先级: {{ t.priority }}</span>
+                  <div v-if="t.description" style="margin-top:6px">{{ t.description }}</div>
+                  <div v-if="t.due_date" style="margin-top:6px">
+                    <template v-for="part in [splitDue(t.due_date)]" :key="part.date + part.time">
+                      到期：<span>{{ part.date }}</span>
+                      <span v-if="part.time">&nbsp;{{ part.time }}</span>
+                    </template>
+                  </div>
+                  <div class="tags" v-if="t.tags && t.tags.length" style="margin-top:6px">标签：{{ t.tags.join(", ") }}</div>
+                </div>
+                <button class="btn btn-danger" @click="deleteTodo(t.id)">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    
+    <div v-if="selectedTask" class="modal-overlay" @click.self="closeTask" style="position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000">
+      <div class="modal" style="background:#fff; padding:16px; width:480px; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.2); position:relative">
+        <button @click="closeTask" aria-label="关闭" title="关闭" style="position:absolute; right:8px; top:8px; background:transparent; border:none; font-size:18px; cursor:pointer">✕</button>
+        <h3>任务详情</h3>
+        <div style="margin-bottom:8px">
+          <label style="display:block; font-weight:600">标题</label>
+          <input v-model="selectedTask.title" style="width:100%; padding:8px" />
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block; font-weight:600">详情</label>
+          <textarea v-model="selectedTask.description" style="width:100%; height:80px"></textarea>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+          <div style="flex:1">
+            <label style="display:block; font-weight:600">到期日期（YYYY-MM-DD 或 带时间）</label>
+            <input v-model="selectedTask.due_date" style="width:100%; padding:8px" />
+          </div>
+          <div style="width:140px">
+            <label style="display:block; font-weight:600">标签（逗号分隔）</label>
+            <input v-model="selectedTask.tags_str" style="width:100%; padding:6px" />
+          </div>
+          <div style="width:120px">
+            <label style="display:block; font-weight:600">优先级</label>
+            <select v-model.number="selectedTask.priority" style="width:100%; padding:6px">
+              <option :value="0">0（最低）</option>
+              <option :value="1">1</option>
+              <option :value="2">2</option>
+              <option :value="3">3（最高）</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px">
+          <button @click="closeTask">取消</button>
+          <button @click="saveTask" style="background:#1890ff; color:#fff; border:none; padding:6px 12px; border-radius:4px">保存</button>
+        </div>
+      </div>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+  </html>
